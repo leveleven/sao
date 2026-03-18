@@ -1,0 +1,9 @@
+[package]
+name = "sao-protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "sao wire protocol (frames, message types)"
+
+[dependencies]
+tokio.workspace = true

@@ -1,0 +1,25 @@
+# Example server config (copy to e.g. ./config.yaml for local dev)
+
+listen: "127.0.0.1:8443"
+
+tls:
+  cert_path: "./tls/cert.pem"
+  key_path: "./tls/key.pem"
+  auto_generate_self_signed: true
+
+authorized_keys_path: "./authorized_keys"
+
+allow_insecure_plain: false
+# Dev-only plaintext (requires allow_insecure_plain: true):
+# insecure_plain_listen: "127.0.0.1:18443"
+
+shell_argv: ["bash", "-lc"]
+exec_timeout_secs: 120
+policy_group_default: "default"
+
+policy:
+  deny_substrings:
+    - "rm -rf /"
+
+# policy_group_by_fingerprint:
+#   "<64-hex lower>": "admins"

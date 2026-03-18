@@ -1,0 +1,14 @@
+[Unit]
+Description=sao Agent channel server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/sao-server --config /etc/sao/config.yaml
+Restart=on-failure
+AmbientCapabilities=
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
