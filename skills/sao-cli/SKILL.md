@@ -23,14 +23,14 @@ Replace placeholders: `HOST`, `PORT`, `HEX64` (64-char lowercase hex SPKI finger
 
 | Goal | Invocation |
 |------|--------------|
-| Remote exec (subject to server policy) | `sao run HOST:PORT -- <cmd and args…>` (words are joined into one line for remote `bash -lc`) |
+| Remote exec (subject to server policy) | `sao run [-p PORT] [--accept-new] HOST -- <cmd…>` — default port **8443**; `-p` after `run`. Missing pin: **yes/no** on TTY or **`--accept-new`**. Pin mismatch (cert changed): **yes/no** to replace, or **`--accept-new`** to auto-replace |
 | Store SPKI pin in `~/.sao/known_hosts` | `sao trust add HOST PORT HEX64` |
 | Read presented cert SPKI on a **trusted network** (no identity guarantee) | `sao trust probe HOST:PORT` |
-| Show/create agent key fingerprint and `authorized_keys` line | `sao key-fingerprint` |
+| Show/create agent key; writes `~/.sao/keys/agent.ed25519.pub` (append its non-comment line to server) | `sao key-fingerprint` |
 
 **Agent behavior**:
 
-- Pick the matching row, execute via **run_terminal_cmd** (or equivalent). Ask the user for **HOST:PORT**, fingerprint, or remote command when unclear.
+- Pick the matching row, execute via **run_terminal_cmd** (or equivalent). Ask the user for **HOST**, optional **PORT** (default 8443), fingerprint, or remote command when unclear.
 - Return **stdout/stderr** to the user; on non-zero exit, explain likely causes (auth, policy, network).
 
 ## 3. Logical prerequisites (not install steps)
@@ -39,7 +39,7 @@ Usually already satisfied by the user/ops:
 
 - **sao-server** running on the target host with TLS reachable.
 - **`~/.sao/known_hosts`** contains a pin for `HOST PORT` (`trust add` or admin-supplied fingerprint).
-- **`~/.sao/keys/agent.ed25519`** exists and the **`sao key-fingerprint` public line** is on the server **`authorized_keys`**.
+- **`~/.sao/keys/agent.ed25519`** (private) and **`agent.ed25519.pub`** (public line for server) exist, and that **`sao-ed25519 …` line** is on the server **`authorized_keys`**.
 
 If not, guide in order: **key-fingerprint → user adds line on server → trust add (or probe) → run**.
 

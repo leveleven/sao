@@ -31,9 +31,9 @@ impl KnownHosts {
                 )));
             }
             let host = normalize_host(parts[0]);
-            let port: u16 = parts[1].parse().map_err(|_| {
-                CoreError::KnownHostsLine(format!("line {}: bad port", lineno + 1))
-            })?;
+            let port: u16 = parts[1]
+                .parse()
+                .map_err(|_| CoreError::KnownHostsLine(format!("line {}: bad port", lineno + 1)))?;
             let fp = parse_hex32(parts[2])?;
             k.pins.insert((host, port), fp);
         }
@@ -74,7 +74,11 @@ impl KnownHosts {
 
 fn normalize_host(h: &str) -> String {
     let h = h.trim_matches(&['[', ']'][..]);
-    if h.contains(':') && !h.chars().all(|c| c.is_ascii_digit() || c == '.' || c == ':') {
+    if h.contains(':')
+        && !h
+            .chars()
+            .all(|c| c.is_ascii_digit() || c == '.' || c == ':')
+    {
         // IPv6 without brackets
         return h.to_lowercase();
     }

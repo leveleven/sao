@@ -2,16 +2,17 @@
 
 mod connect;
 
+use std::io::{self, IsTerminal, Write};
 use std::path::Path;
 
 use base64::Engine;
 use clap::{Parser, Subcommand};
-use sao_core::agent_key::{load_or_create_signing_key, sign_auth_message};
+use sao_core::agent_key::{load_or_create_signing_key, public_key_path, sign_auth_message};
 use sao_core::authorized_keys::ed25519_fingerprint_hex;
 use sao_core::known_hosts::KnownHosts;
 use sao_core::signing_bytes;
 use sao_core::spki::spki_sha256_hex_from_cert_der;
-use sao_core::{msg_type, FrameCodec};
+use sao_core::{msg_type, CoreError, FrameCodec};
 use serde::Deserialize;
 use serde_json::json;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -27,10 +28,21 @@ struct Cli {
 enum Cmd {
     /// Run a remote shell command (TLS pin + auth).
     Run {
-        /// e.g. `127.0.0.1:8443`
-        addr: String,
+        /// TCP port (default 8443). Place `-p` right after `run`, before `HOST`.
+        #[arg(
+            short = 'p',
+            long = "port",
+            default_value_t = 8443,
+            value_name = "PORT"
+        )]
+        port: u16,
+        /// Hostname or IP (no `:port` suffix; use `-p`).
+        host: String,
         #[arg(required = true, num_args = 1..)]
         cmd: Vec<String>,
+        /// If `host:port` has no pin in known_hosts, save the server SPKI automatically (MITM risk on untrusted networks).
+        #[arg(long = "accept-new")]
+        accept_new: bool,
     },
     /// Print server SPKI fingerprint (use only on a trusted network).
     TrustProbe { addr: String },
@@ -40,7 +52,7 @@ enum Cmd {
         port: u16,
         fingerprint_hex: String,
     },
-    /// Show agent fingerprint and authorized_keys line.
+    /// Show agent fingerprint, write `agent.ed25519.pub`, print authorized_keys line.
     KeyFingerprint,
 }
 
@@ -80,23 +92,137 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Cmd::KeyFingerprint => {
             let sk = load_or_create_signing_key(&key_path)?;
             let fp = ed25519_fingerprint_hex(&sk.verifying_key());
+            let pub_path = public_key_path(&key_path);
             println!("{fp}");
-            eprintln!("Add to server authorized_keys:");
-            eprintln!(
-                "sao-ed25519 {} agent-label",
-                base64::engine::general_purpose::STANDARD.encode(sk.verifying_key().as_bytes())
-            );
+            eprintln!("Keys: {} and {}", key_path.display(), pub_path.display());
+            eprintln!("Append the non-comment line from the .pub file to the server's authorized_keys.");
         }
-        Cmd::Run { addr, cmd } => {
+        Cmd::Run {
+            port,
+            host,
+            cmd,
+            accept_new,
+        } => {
             let shell_line = cmd.join(" ");
-            let (host, port) = parse_addr(&addr)?;
-            let kh = KnownHosts::load(&known_path)?;
-            let pin = kh.pin_hex(&host, port)?;
-            let tls = connect::connect_pinned(&host, port, &pin).await?;
+            let tls = connect_with_pin_management(
+                &host,
+                port,
+                &known_path,
+                accept_new,
+            )
+            .await?;
             run_session(tls, &key_path, &shell_line).await?;
         }
     }
     Ok(())
+}
+
+/// Connect with pin from known_hosts; on mismatch, prompt to replace (or use --accept-new).
+async fn connect_with_pin_management(
+    host: &str,
+    port: u16,
+    known_path: &Path,
+    accept_new: bool,
+) -> Result<
+    tokio_native_tls::TlsStream<tokio::net::TcpStream>,
+    Box<dyn std::error::Error + Send + Sync>,
+> {
+    let pin = resolve_tls_pin(host, port, known_path, accept_new).await?;
+    match connect::connect_pinned(host, port, &pin).await {
+        Ok(tls) => Ok(tls),
+        Err(e) if e.to_string().contains("SPKI pin mismatch") => {
+            let der = connect::connect_probe(host, port)
+                .await
+                .map_err(|e| format!("TLS connect (host key changed): {e}"))?;
+            let fp_hex = spki_sha256_hex_from_cert_der(&der)
+                .map_err(|e| format!("server certificate: {e}"))?;
+
+            let replace = if accept_new {
+                eprintln!(
+                    "Warning: replacing TLS pin for {host}:{port} with new SPKI SHA-256 {fp_hex} — verify on a trusted network."
+                );
+                true
+            } else if io::stdin().is_terminal() {
+                eprintln!("Host key for {host}:{port} has changed.");
+                eprintln!("New TLS SPKI SHA-256 fingerprint is {fp_hex}.");
+                eprint!("Replace the pin in known_hosts? (yes/no): ");
+                io::stdout().flush()?;
+                let mut line = String::new();
+                io::stdin().read_line(&mut line)?;
+                matches!(line.trim().to_lowercase().as_str(), "y" | "yes")
+            } else {
+                return Err(format!(
+                    "TLS pin mismatch for {host}:{port}. Run interactively to replace, or: sao trust add {host} {port} {fp_hex}"
+                )
+                .into());
+            };
+
+            if !replace {
+                return Err("Host key not accepted.".into());
+            }
+
+            let mut kh = KnownHosts::load(known_path)?;
+            kh.insert_hex(host, port, &fp_hex)?;
+            kh.save(known_path)?;
+            eprintln!("Replaced pin for {host}:{port} in {}", known_path.display());
+            let new_pin = kh.pin_hex(host, port)?;
+            connect::connect_pinned(host, port, &new_pin)
+                .await
+                .map_err(|e| e.to_string().into())
+        }
+        Err(e) => Err(e.to_string().into()),
+    }
+}
+
+/// Load SPKI pin from known_hosts, or trust-on-first-use via `--accept-new`, TTY prompt, or error with hint.
+async fn resolve_tls_pin(
+    host: &str,
+    port: u16,
+    known_path: &Path,
+    accept_new: bool,
+) -> Result<[u8; 32], Box<dyn std::error::Error + Send + Sync>> {
+    let mut kh = KnownHosts::load(known_path)?;
+    match kh.pin_hex(host, port) {
+        Ok(pin) => Ok(pin),
+        Err(CoreError::KnownHostsMissing(_)) => {
+            let der = connect::connect_probe(host, port)
+                .await
+                .map_err(|e| format!("TLS connect (trust setup): {e}"))?;
+            let fp_hex = spki_sha256_hex_from_cert_der(&der)
+                .map_err(|e| format!("server certificate: {e}"))?;
+
+            let save = if accept_new {
+                eprintln!(
+                    "Warning: saving new TLS pin for {host}:{port} (SPKI SHA-256 {fp_hex}) — verify on a trusted network when possible."
+                );
+                true
+            } else if io::stdin().is_terminal() {
+                eprintln!("The authenticity of host '{host}' (port {port}) can't be established.");
+                eprintln!("TLS SPKI SHA-256 fingerprint is {fp_hex}.");
+                eprint!("Are you sure you want to continue connecting (yes/no)? ");
+                io::stdout().flush()?;
+                let mut line = String::new();
+                io::stdin().read_line(&mut line)?;
+                matches!(line.trim().to_lowercase().as_str(), "y" | "yes")
+            } else {
+                return Err(format!(
+                    "no TLS pin for {host}:{port}. Add with:\n  sao trust add {host} {port} {fp_hex}\n\
+                     Or non-interactively:\n  sao run -p {port} --accept-new {host} -- …"
+                )
+                .into());
+            };
+
+            if !save {
+                return Err("Host key not accepted.".into());
+            }
+
+            kh.insert_hex(host, port, &fp_hex)?;
+            kh.save(known_path)?;
+            eprintln!("Pinned {host}:{port} in {}", known_path.display());
+            Ok(kh.pin_hex(host, port)?)
+        }
+        Err(e) => Err(e.into()),
+    }
 }
 
 fn parse_addr(s: &str) -> Result<(String, u16), String> {
@@ -169,12 +295,20 @@ where
     }
     let ar: AuthResult = serde_json::from_slice(&f.payload)?;
     if !ar.ok {
-        return Err(format!(
-            "auth failed: {} {:?}",
-            ar.reason.unwrap_or_default(),
-            ar.message
-        )
-        .into());
+        let reason = ar.reason.as_deref().unwrap_or("");
+        let detail = ar.message.as_deref().unwrap_or("");
+        if reason == "UNKNOWN_KEY"
+            || detail.contains("authorized_keys")
+            || detail.contains("fingerprint not in authorized_keys")
+        {
+            return Err(format!(
+                "Authentication rejected: this agent's public key is not in the server's authorized_keys.\n\
+                 Run `sao key-fingerprint` to create or refresh your key pair; append the non-comment line from ~/.sao/keys/agent.ed25519.pub to the server's authorized_keys.\n\
+                 Server detail: {reason} {detail:?}"
+            )
+            .into());
+        }
+        return Err(format!("auth failed: {} {:?}", reason, ar.message).into());
     }
 
     let exec = json!({ "shell": shell_line });

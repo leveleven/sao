@@ -1,13 +1,13 @@
-# Example server config (copy to e.g. ./config.yaml for local dev)
+# Example server config (or run: sao-server init — writes .sao/config.yaml and peers)
 
 listen: "127.0.0.1:8443"
 
 tls:
-  cert_path: "./tls/cert.pem"
-  key_path: "./tls/key.pem"
+  cert_path: ".sao/tls/cert.pem"
+  key_path: ".sao/tls/key.pem"
   auto_generate_self_signed: true
 
-authorized_keys_path: "./authorized_keys"
+authorized_keys_path: ".sao/authorized_keys"
 
 allow_insecure_plain: false
 # Dev-only plaintext (requires allow_insecure_plain: true):

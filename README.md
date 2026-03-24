@@ -28,7 +28,8 @@ make install
 | Target | Description |
 |--------|-------------|
 | `make` / `make release` | `cargo build --release` (`sao` + `sao-server`) |
-| `make install` | Install `sao` and `sao-server` |
+| `make install` | Install `sao` and `sao-server` binaries |
+| `make install-service` | Build, init `/etc/sao`, install binaries + systemd, enable & start (use `NO_START=1` to skip start) |
 | `make uninstall` | Remove those binaries |
 | `make check` | `fmt` + `clippy -D warnings` + `test` |
 
@@ -36,19 +37,19 @@ For day-to-day development you can still use `cargo build --workspace`, etc.
 
 **MSRV**: Rust **1.87+** recommended; `sao-core` pins `time = 0.3.36` for toolchains below 1.88.
 
-**systemd**: see **deploy/systemd/sao-server.service**. First-trust flow and `known_hosts`: **Quick local try** below and **`docs/protocol.md`**.
+**systemd**: **`make install-service`** — build, init `/etc/sao`, install binaries and systemd unit (read-only exec env), enable and start. Requires **systemd ≥ 226**; aborts otherwise. Uses `ReadOnlyPaths` on ≥ 230, `ProtectSystem=strict` on 226–229. Use `NO_START=1` to skip start until keys are in `/etc/sao/authorized_keys`.
 
 ## Quick local try
 
 ```bash
-cp examples/config.yaml ./config.yaml
-# Edit authorized_keys: run first
+cargo run -p sao-server -- init
+# Edit .sao/authorized_keys: run first
 cargo run -p sao-client --bin sao -- key-fingerprint
-# Paste the printed sao-ed25519 line into ./authorized_keys
-cargo run -p sao-server -- --config config.yaml
+# Append the non-comment line from ~/.sao/keys/agent.ed25519.pub into .sao/authorized_keys
+cargo run -p sao-server
 # Other terminal: pin SPKI (fingerprint from server log or sao trust probe)
 cargo run -p sao-client --bin sao -- trust add 127.0.0.1 8443 <fingerprint>
-cargo run -p sao-client --bin sao -- run 127.0.0.1:8443 -- echo hello
+cargo run -p sao-client --bin sao -- run 127.0.0.1 -- echo hello
 ```
 
 After `make install`, use `sao` / `sao-server` instead of `cargo run`.
@@ -57,10 +58,10 @@ After `make install`, use `sao` / `sao-server` instead of `cargo run`.
 
 | Subcommand | Description |
 |------------|-------------|
-| `run HOST:PORT -- <cmd>...` | After TLS + pin + auth, remote `bash -lc` |
+| `run [-p PORT] [--accept-new] HOST -- <cmd>...` | After TLS + pin + auth, remote `bash -lc` (default **8443**). New host or pin mismatch: **yes/no** on TTY, or **`--accept-new`** to auto-save/replace (unsafe on hostile networks). |
 | `trust probe HOST:PORT` | Print server SPKI fingerprint (trusted network only) |
 | `trust add HOST PORT HEX64` | Append pin to `~/.sao/known_hosts` |
-| `key-fingerprint` | Create/show agent key and `authorized_keys` line |
+| `key-fingerprint` | Create/show agent key; writes `~/.sao/keys/agent.ed25519.pub` — append its non-comment line to server `authorized_keys` |
 
 ## Crates
 

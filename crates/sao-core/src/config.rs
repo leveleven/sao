@@ -1,7 +1,7 @@
 //! Server YAML config shape (`docs/protocol.md` — values are deployment-specific).
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -91,6 +91,9 @@ fn default_policy_group() -> String {
     "default".to_string()
 }
 
+/// Default YAML path for local dev (`sao-server init` and `sao-server` without `--config`).
+pub const LOCAL_DEV_CONFIG_PATH: &str = ".sao/config.yaml";
+
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
@@ -113,5 +116,68 @@ impl ServerConfig {
         let raw = std::fs::read_to_string(path)?;
         let c: ServerConfig = serde_yaml::from_str(&raw)?;
         Ok(c)
+    }
+
+    /// Default layout for local development: all paths under `.sao/` in the process cwd.
+    pub fn local_dev_init() -> Self {
+        Self::init_for_dir(Path::new(".sao"))
+    }
+
+    /// Init layout with paths under `dir`; use 0.0.0.0 for system dirs like /etc/sao.
+    pub fn init_for_dir(dir: &std::path::Path) -> Self {
+        let dir = dir.to_path_buf();
+        let listen = if dir.to_string_lossy().starts_with("/etc") {
+            "0.0.0.0:8443".to_string()
+        } else {
+            "127.0.0.1:8443".to_string()
+        };
+        Self {
+            listen,
+            tls: TlsConfig {
+                cert_path: dir.join("tls").join("cert.pem"),
+                key_path: dir.join("tls").join("key.pem"),
+                auto_generate_self_signed: true,
+            },
+            authorized_keys_path: dir.join("authorized_keys"),
+            allow_insecure_plain: false,
+            insecure_plain_listen: None,
+            policy: PolicyConfig {
+                deny_substrings: vec!["rm -rf /".to_string()],
+            },
+            shell_argv: default_shell_argv(),
+            exec_timeout_secs: 120,
+            policy_group_default: default_policy_group(),
+            policy_group_by_fingerprint: HashMap::new(),
+        }
+    }
+
+    pub fn save(&self, path: &std::path::Path) -> Result<(), crate::CoreError> {
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)?;
+            }
+        }
+        let yaml = serde_yaml::to_string(self)?;
+        std::fs::write(path, yaml)?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn local_dev_init_save_load_roundtrip() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("cfg.yaml");
+        let c = ServerConfig::local_dev_init();
+        c.save(&path).unwrap();
+        let c2 = ServerConfig::load(&path).unwrap();
+        assert_eq!(c.listen, c2.listen);
+        assert_eq!(c.tls.cert_path, c2.tls.cert_path);
+        assert_eq!(c.authorized_keys_path, c2.authorized_keys_path);
+        assert_eq!(c.policy.deny_substrings, c2.policy.deny_substrings);
     }
 }

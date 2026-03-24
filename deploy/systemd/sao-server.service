@@ -1,3 +1,6 @@
+# sao Agent channel server
+# Requires systemd >= 230 for ReadOnlyPaths/ReadWritePaths.
+# On older systems (e.g. CentOS 7), remove those lines or use deploy/systemd/sao-server.service.legacy
 [Unit]
 Description=sao Agent channel server
 After=network.target
@@ -6,7 +9,11 @@ After=network.target
 Type=simple
 ExecStart=/usr/local/bin/sao-server --config /etc/sao/config.yaml
 Restart=on-failure
-AmbientCapabilities=
+
+# Restrict executed commands to read-only filesystem; /tmp for bash process substitution etc.
+ReadOnlyPaths=/
+ReadWritePaths=/tmp
+
 NoNewPrivileges=true
 PrivateTmp=true
 

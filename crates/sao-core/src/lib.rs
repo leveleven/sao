@@ -9,7 +9,9 @@ pub mod known_hosts;
 pub mod policy;
 pub mod spki;
 
-pub use agent_key::{load_or_create_signing_key, sign_auth_message};
+pub use agent_key::{
+    load_or_create_signing_key, public_key_path, sign_auth_message, write_agent_public_key_file,
+};
 pub use auth_message::signing_bytes;
 pub use authorized_keys::{
     find_key, load_authorized_keys, verify_ed25519_signature, AuthorizedKey, KEY_TYPE_ED25519,

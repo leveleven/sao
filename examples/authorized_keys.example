@@ -1,5 +1,5 @@
-# Generate client key and line:
-#   cargo run -p sao-client --bin sao -- key-fingerprint
-# Paste the printed `sao-ed25519 AAAA...` line below.
+# Generate client key:
+#   sao key-fingerprint
+# Then append the non-comment line from ~/.sao/keys/agent.ed25519.pub below.
 
 # sao-ed25519 <base64-32-byte-pubkey> my-agent

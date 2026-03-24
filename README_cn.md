@@ -28,7 +28,8 @@ make install
 | 目标 | 说明 |
 |------|------|
 | `make` / `make release` | `cargo build --release`（sao + sao-server） |
-| `make install` | 安装 `sao`、`sao-server` |
+| `make install` | 安装 `sao`、`sao-server` 二进制 |
+| `make install-service` | 构建、初始化 `/etc/sao`、安装二进制与 systemd 服务并启动（`NO_START=1` 可延后启动） |
 | `make uninstall` | 移除上述二进制 |
 | `make check` | `fmt` + `clippy -D warnings` + `test` |
 
@@ -36,19 +37,19 @@ make install
 
 **MSRV**：建议 **Rust 1.87+**；`sao-core` 固定 `time = 0.3.36` 以兼容低于 1.88 的工具链。
 
-**systemd**：见 **deploy/systemd/sao-server.service**；首次信任与 pin 见下文「快速本地试跑」与 **`docs/protocol.md`**。
+**systemd**：**`make install-service`** — 构建、初始化 `/etc/sao`、安装二进制与 systemd 单元（执行环境只读）、启用并启动。**要求 systemd ≥ 226**，否则中止。≥ 230 使用 `ReadOnlyPaths`，226–229 使用 `ProtectSystem=strict`。`NO_START=1` 可延后启动。
 
 ## 快速本地试跑
 
 ```bash
-cp examples/config.yaml ./config.yaml
-# 编辑 authorized_keys：先运行
+cargo run -p sao-server -- init
+# 编辑 .sao/authorized_keys：先运行
 cargo run -p sao-client --bin sao -- key-fingerprint
-# 将输出的 sao-ed25519 行写入 ./authorized_keys
-cargo run -p sao-server -- --config config.yaml
+# 将 ~/.sao/keys/agent.ed25519.pub 中的非注释行追加到 .sao/authorized_keys
+cargo run -p sao-server
 # 另终端：信任 SPKI（用服务端打印的指纹或 trust probe）
 cargo run -p sao-client --bin sao -- trust add 127.0.0.1 8443 <指纹>
-cargo run -p sao-client --bin sao -- run 127.0.0.1:8443 -- echo hello
+cargo run -p sao-client --bin sao -- run 127.0.0.1 -- echo hello
 ```
 
 执行过 **`make install`** 后，可直接使用 **`sao`** / **`sao-server`**，无需 `cargo run`。
@@ -57,10 +58,10 @@ cargo run -p sao-client --bin sao -- run 127.0.0.1:8443 -- echo hello
 
 | 子命令 | 说明 |
 |--------|------|
-| `run HOST:PORT -- <cmd>...` | TLS + pin + 认证后远程 `bash -lc` |
+| `run [-p PORT] [--accept-new] HOST -- <cmd>...` | TLS + pin + 认证后远程 `bash -lc`（默认 **8443**）。新主机或 pin 不匹配时，TTY 上 **yes/no** 确认，或 **`--accept-new`** 自动保存/替换（不可信网络有 MITM 风险）。 |
 | `trust probe HOST:PORT` | 打印服务端 SPKI 指纹（仅可信网络） |
 | `trust add HOST PORT HEX64` | 写入 `~/.sao/known_hosts` |
-| `key-fingerprint` | 生成/展示 Agent 公钥与 `authorized_keys` 行 |
+| `key-fingerprint` | 生成/展示 Agent 密钥；写入 `~/.sao/keys/agent.ed25519.pub` — 将其非注释行追加到服务端 `authorized_keys` |
 
 ## 组件
 
