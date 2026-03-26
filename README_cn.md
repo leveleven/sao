@@ -16,6 +16,22 @@
 - **贡献者 / AI Agent 说明**：[`AGENTS.md`](AGENTS.md)
 - **Agent 技能**（如何调用 `sao` CLI）：[`skills/sao-cli/SKILL.md`](skills/sao-cli/SKILL.md)
 
+## 环境准备
+
+- **Rust**：稳定版工具链，建议 **1.87+**（见 [rustup](https://rustup.rs/)）。
+- **本机编译依赖**（`sao-client` 使用的 **native-tls** / `openssl-sys` 需要）：**pkg-config**（或 `pkgconf`）与 **OpenSSL 开发头文件**。在 `cargo build` / `make` 之前按发行版安装：
+
+| 发行版 | 命令 |
+|--------|------|
+| Debian、Ubuntu | `sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev` |
+| Fedora、RHEL 8+、CentOS Stream | `sudo dnf install -y pkgconf-pkg-config openssl-devel` |
+| Alpine Linux | `apk add pkgconf openssl-dev` |
+| openSUSE / SLE | `sudo zypper install pkg-config libopenssl-devel` |
+| Arch Linux | `sudo pacman -S pkgconf openssl` |
+| 旧版 RHEL / CentOS 7 | `sudo yum install pkgconfig openssl-devel` |
+
+macOS：若需可用 Homebrew 安装 OpenSSL（`brew install openssl pkg-config`），并按 `openssl-sys` 文档设置 `PKG_CONFIG_PATH` / `OPENSSL_DIR`。
+
 ## 构建与安装
 
 **Release 编译并安装到 `$(PREFIX)/bin`（默认 `/usr/local/bin`，常需 `sudo`）：**

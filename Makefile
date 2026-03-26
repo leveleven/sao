@@ -27,8 +27,6 @@ install: release
 install-service: release
 	@set -e; \
 	echo "sao install: PREFIX=$(PREFIX) BINDIR=$(BINDIR)"; \
-	echo "Building release..."; \
-	cargo build --release -p sao-server -p sao-client; \
 	if [ ! -f "$(CONFIG_PATH)" ]; then \
 		echo "Initializing $(CONFIG_PATH) and TLS materials..."; \
 		mkdir -p /etc/sao; \

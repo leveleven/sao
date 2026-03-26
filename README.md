@@ -16,6 +16,22 @@ The project is inspired by **security incidents where agents were given excessiv
 - **Contributor / AI agent notes**: [`AGENTS.md`](AGENTS.md)
 - **Agent skill** (how to invoke `sao` CLI): [`skills/sao-cli/SKILL.md`](skills/sao-cli/SKILL.md)
 
+## Prerequisites
+
+- **Rust**: stable toolchain, **1.87+** recommended ([rustup](https://rustup.rs/)).
+- **Native build deps** (for `openssl-sys` / **native-tls** used by `sao-client`): **pkg-config** (or `pkgconf`) and **OpenSSL development headers**. Install on your distro before `cargo build` / `make`:
+
+| Distribution | Command |
+|--------------|---------|
+| Debian, Ubuntu | `sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev` |
+| Fedora, RHEL 8+, CentOS Stream | `sudo dnf install -y pkgconf-pkg-config openssl-devel` |
+| Alpine Linux | `apk add pkgconf openssl-dev` |
+| openSUSE / SLE | `sudo zypper install pkg-config libopenssl-devel` |
+| Arch Linux | `sudo pacman -S pkgconf openssl` |
+| older RHEL / CentOS 7 | `sudo yum install pkgconfig openssl-devel` |
+
+macOS: install OpenSSL via Homebrew if needed (`brew install openssl pkg-config`) and set `PKG_CONFIG_PATH` / `OPENSSL_DIR` as described in the `openssl-sys` crate docs.
+
 ## Build and install
 
 **Release build and install to `$(PREFIX)/bin` (default `/usr/local/bin`; often needs `sudo`):**
